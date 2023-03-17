@@ -44,6 +44,7 @@ O controle irá controlar o Web TikTok de Desktop.
 
 ### Comandos/ Feedbacks (2 pts)
 
+## Comandos
 #### Joystick:
 - Para cima: volta ao vídeo anterior
 - Para baixo: passa para o próximo vídeo
@@ -53,17 +54,17 @@ O controle irá controlar o Web TikTok de Desktop.
 #### Potenciômetro:
 - Ajuste manual de volume do vídeo
 
-Quais os feedbacks que seu controle vai fornecer ao usuário?
--->
+## Feedbacks
+
+Para o joystick, um feedback de toque pode ser uma vibração ao mover o joystick em uma direção. Isso pode ajudar o usuário a sentir quando o joystick é movido em uma determinada direção e indicar que uma ação foi executada. Um feedback visual pode ser uma animação tela que mostra qual ação está sendo realizada quando o joystick é movido (animação de passar de vídeo, mute/desmute e like).
+
+Já para o potenciômetro, um feedback tátil pode ser a resistência que o usuário sente ao girar o potenciômetro, indicando que o volume está sendo alterado. Um feedback visual pode ser uma barra de volume na tela que indica o nível de volume atual do vídeo.
 
 ## In/OUT (3 pts)
 
-<!--
-Para cada Comando/ Feedback do seu controle, associe qual sensores/ atuadores pretende utilizar? Faca em formato de lista, exemplo:
+Para cada vez que o joystick mutar algum vídeo (movimento para a esquerda) e ele ficar sem som, um LED vermelho ficará acesso até que o som volte.
 
-- Avanca música: Push button amarelo
-- Volume da música: Fita de LED indicando potência do som
--->
+Para um movimento para a direita de curtir o vídeo, um LED verde irá piscar por alguns segundos. Assim, indicando que o usuário deu like no vídeo em que ele está.
 
 ### Design (2 pts)
 
