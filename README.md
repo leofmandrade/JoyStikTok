@@ -71,3 +71,6 @@ Para um movimento para a direita de curtir o vídeo, um LED verde irá piscar po
 <!--
 Faca um esboco de como seria esse controle (vai ter uma etapa que terão que detalhar melhor isso).
 -->
+
+![image](https://user-images.githubusercontent.com/79852830/226080812-e1710b83-4bfc-4d33-988c-df9c6994a957.png)
+
