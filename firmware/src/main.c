@@ -25,6 +25,14 @@
 #define BUT_IDX      11
 #define BUT_IDX_MASK (1 << BUT_IDX)
 
+// Botão
+#define PIN1_PIO      PIOA
+#define PIN1_PIO_ID   ID_PIOA
+#define PIN1_IDX      19
+#define PIN1_IDX_MASK (1 << PIN1_IDX)
+
+
+
 // usart (bluetooth ou serial)
 // Descomente para enviar dados
 // pela serial debug
@@ -64,10 +72,28 @@ extern void xPortSysTickHandler(void);
 /************************************************************************/
 /* variaveis globais                                                    */
 /************************************************************************/
-
+volatile char but_flag = 0;
 /************************************************************************/
 /* RTOS application HOOK                                                */
 /************************************************************************/
+void pisca_led(int n, int t);
+void io_init(void);
+
+void but_callback(void)
+{
+	but_flag = 1;
+}
+
+
+void pisca_led(int n, int t){
+	int j=70;
+	for (int i=0;i<n;i++){
+		pio_clear(LED_PIO, LED_IDX_MASK);
+		delay_ms(t);
+		pio_set(LED_PIO, LED_IDX_MASK);
+		delay_ms(t);
+	}
+}
 
 /* Called if stack overflow during execution */
 extern void vApplicationStackOverflowHook(xTaskHandle *pxTask,
@@ -114,8 +140,28 @@ void io_init(void) {
 	pmc_enable_periph_clk(BUT_PIO_ID);
 
 	// Configura Pinos
-	pio_configure(LED_PIO, PIO_OUTPUT_0, LED_IDX_MASK, PIO_DEFAULT | PIO_DEBOUNCE);
+	pio_configure(LED_PIO, PIO_OUTPUT_1, LED_IDX_MASK, PIO_DEFAULT | PIO_DEBOUNCE);
 	pio_configure(BUT_PIO, PIO_INPUT, BUT_IDX_MASK, PIO_PULLUP);
+	pio_configure(PIN1_PIO, PIO_INPUT, PIN1_IDX_MASK, PIO_PULLUP | PIO_DEBOUNCE);
+	
+	// Configura PIO para lidar com o pino do bot�o como entrada
+	// com pull-up
+	pio_set_debounce_filter(BUT_PIO, BUT_IDX_MASK, 10);
+	
+	pio_handler_set(PIN1_PIO,
+	PIN1_PIO_ID,
+	PIN1_IDX_MASK,
+	PIO_IT_FALL_EDGE,
+	but_callback);
+	
+	// Ativa interrup��o e limpa primeira IRQ gerada na ativacao
+	pio_enable_interrupt(PIN1_PIO, PIN1_IDX_MASK);
+	pio_get_interrupt_status(PIN1_PIO);
+	
+	// Configura NVIC para receber interrupcoes do PIO do botao
+	// com prioridade 4 (quanto mais pr�ximo de 0 maior)
+	NVIC_EnableIRQ(PIN1_PIO_ID);
+	NVIC_SetPriority(PIN1_PIO_ID, 4); // Prioridade 4
 }
 
 static void configure_console(void) {
@@ -245,6 +291,11 @@ void task_bluetooth(void) {
 			vTaskDelay(10 / portTICK_PERIOD_MS);
 		}
 		usart_write(USART_COM, eof);
+		
+		if(but_flag){
+			pisca_led(20, 100);
+			but_flag = 0;
+		}
 
 		// dorme por 500 ms
 		vTaskDelay(500 / portTICK_PERIOD_MS);
@@ -259,6 +310,8 @@ int main(void) {
 	/* Initialize the SAM system */
 	sysclk_init();
 	board_init();
+	delay_init();
+	io_init();
 
 	configure_console();
 
