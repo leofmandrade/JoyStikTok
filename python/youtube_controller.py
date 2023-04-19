@@ -3,10 +3,21 @@ import serial
 import argparse
 import time
 import logging
+from RPA.Desktop import Desktop
+from ctypes import cast, POINTER
+from comtypes import CLSCTX_ALL
+from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+
+devices = AudioUtilities.GetSpeakers()
+interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+volume = cast(interface, POINTER(IAudioEndpointVolume))
+
+desktop = Desktop()
 
 class MyControllerMap:
     def __init__(self):
         self.button = {'A': 'L'} # Fast forward (10 seg) pro Youtube
+        self.button2 = {'B': 'M'}
 
 class SerialControllerInterface:
     # Protocolo
@@ -30,14 +41,39 @@ class SerialControllerInterface:
         data = self.ser.read()
         logging.debug("Received DATA: {}".format(data))
 
+        A = False
+        B = False
+
         if data == b'1':
             print("datab1")
+            A = True
             logging.info("KEYDOWN A")
             pyautogui.keyDown(self.mapping.button['A'])
+        elif data == b'2':
+            print("datab2")
+            B = True
+            logging.info("KEYDOWN B")
+            pyautogui.keyDown(self.mapping.button2['B'])
+        elif data == b'3':
+            print("datab3")
+            desktop.press_keys("up")
+        elif data == b'4':
+            print("datab4")
+            desktop.press_keys("down")
         elif data == b'0':
-            print("datab0")
-            logging.info("KEYUP A")
-            pyautogui.keyUp(self.mapping.button['A'])
+            if A:
+                print("datab0")
+                logging.info("KEYUP A")
+                pyautogui.keyUp(self.mapping.button['A'])
+                A = False
+            elif B:
+                print("datab0")
+                logging.info("KEYUP B")
+                pyautogui.keyUp(self.mapping.button2['B'])
+                B = False
+        else:
+            newVolume = int.from_bytes(data, byteorder='big', signed=False)
+            volume.SetMasterVolume(newVolume, None)
 
         self.incoming = self.ser.read()
 

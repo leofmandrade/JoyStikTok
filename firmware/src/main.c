@@ -31,7 +31,27 @@
 #define PIN1_IDX      19
 #define PIN1_IDX_MASK (1 << PIN1_IDX)
 
+// Botão
+#define PIN2_PIO      PIOB
+#define PIN2_PIO_ID   ID_PIOB
+#define PIN2_IDX      2
+#define PIN2_IDX_MASK (1 << PIN2_IDX)
 
+// Botão
+#define PIN3_PIO      PIOC
+#define PIN3_PIO_ID   ID_PIOC
+#define PIN3_IDX      30
+#define PIN3_IDX_MASK (1 << PIN3_IDX)
+
+// Botão
+#define PIN4_PIO      PIOC
+#define PIN4_PIO_ID   ID_PIOC
+#define PIN4_IDX      17
+#define PIN4_IDX_MASK (1 << PIN4_IDX)
+
+#define AFEC_POT AFEC0
+#define AFEC_POT_ID ID_AFEC0
+#define AFEC_POT_CHANNEL 0 // Canal do pino PD30
 
 // usart (bluetooth ou serial)
 // Descomente para enviar dados
@@ -51,8 +71,20 @@
 /* RTOS                                                                 */
 /************************************************************************/
 
+TimerHandle_t xTimer;
+
 #define TASK_BLUETOOTH_STACK_SIZE            (4096/sizeof(portSTACK_TYPE))
 #define TASK_BLUETOOTH_STACK_PRIORITY        (tskIDLE_PRIORITY)
+#define TASK_LED_STACK_SIZE            (4096/sizeof(portSTACK_TYPE))
+#define TASK_LED_STACK_PRIORITY        (tskIDLE_PRIORITY)
+
+QueueHandle_t xQueueVolume;
+QueueHandle_t xQueueADC;
+
+typedef struct {
+	uint value;
+} adcData;
+
 
 /************************************************************************/
 /* prototypes                                                           */
@@ -65,6 +97,9 @@ extern void vApplicationTickHook(void);
 extern void vApplicationMallocFailedHook(void);
 extern void xPortSysTickHandler(void);
 
+static void config_AFEC_pot(Afec *afec, uint32_t afec_id, uint32_t afec_channel,
+                            afec_callback_t callback);
+
 /************************************************************************/
 /* constants                                                            */
 /************************************************************************/
@@ -73,6 +108,9 @@ extern void xPortSysTickHandler(void);
 /* variaveis globais                                                    */
 /************************************************************************/
 volatile char but_flag = 0;
+volatile char but2_flag = 0;
+volatile char but3_flag = 0;
+volatile char but4_flag = 0;
 /************************************************************************/
 /* RTOS application HOOK                                                */
 /************************************************************************/
@@ -129,20 +167,81 @@ extern void vApplicationMallocFailedHook(void) {
 /* handlers / callbacks                                                 */
 /************************************************************************/
 
+static void AFEC_pot_callback(void) {
+  adcData adc;
+  adc.value = afec_channel_get_value(AFEC_POT, AFEC_POT_CHANNEL);
+  int valor = adc.value*65/4096;
+  char caracter = valor + '0';
+  BaseType_t xHigherPriorityTaskWoken = pdTRUE;
+  xQueueSendFromISR(xQueueVolume, (void *)&caracter, xHigherPriorityTaskWoken);
+}
+
 /************************************************************************/
 /* funcoes                                                              */
 /************************************************************************/
+
+static void config_AFEC_pot(Afec *afec, uint32_t afec_id, uint32_t afec_channel,
+                            afec_callback_t callback) {
+  /*************************************
+   * Ativa e configura AFEC
+   *************************************/
+  /* Ativa AFEC - 0 */
+  afec_enable(afec);
+
+  /* struct de configuracao do AFEC */
+  struct afec_config afec_cfg;
+
+  /* Carrega parametros padrao */
+  afec_get_config_defaults(&afec_cfg);
+
+  /* Configura AFEC */
+  afec_init(afec, &afec_cfg);
+
+  /* Configura trigger por software */
+  afec_set_trigger(afec, AFEC_TRIG_SW);
+
+  /*** Configuracao específica do canal AFEC ***/
+  struct afec_ch_config afec_ch_cfg;
+  afec_ch_get_config_defaults(&afec_ch_cfg);
+  afec_ch_cfg.gain = AFEC_GAINVALUE_0;
+  afec_ch_set_config(afec, afec_channel, &afec_ch_cfg);
+
+  /*
+  * Calibracao:
+  * Because the internal ADC offset is 0x200, it should cancel it and shift
+  down to 0.
+  */
+  afec_channel_set_analog_offset(afec, afec_channel, 0x200);
+
+  /***  Configura sensor de temperatura ***/
+  struct afec_temp_sensor_config afec_temp_sensor_cfg;
+
+  afec_temp_sensor_get_config_defaults(&afec_temp_sensor_cfg);
+  afec_temp_sensor_set_config(afec, &afec_temp_sensor_cfg);
+
+  /* configura IRQ */
+  afec_set_callback(afec, afec_channel, callback, 5);
+  NVIC_SetPriority(afec_id, 5);
+  NVIC_EnableIRQ(afec_id);
+}
 
 void io_init(void) {
 
 	// Ativa PIOs
 	pmc_enable_periph_clk(LED_PIO_ID);
 	pmc_enable_periph_clk(BUT_PIO_ID);
+	pmc_enable_periph_clk(PIN1_PIO_ID);
+	pmc_enable_periph_clk(PIN2_PIO_ID);
+	pmc_enable_periph_clk(PIN3_PIO_ID);
+	pmc_enable_periph_clk(PIN4_PIO_ID);
 
 	// Configura Pinos
 	pio_configure(LED_PIO, PIO_OUTPUT_1, LED_IDX_MASK, PIO_DEFAULT | PIO_DEBOUNCE);
 	pio_configure(BUT_PIO, PIO_INPUT, BUT_IDX_MASK, PIO_PULLUP);
 	pio_configure(PIN1_PIO, PIO_INPUT, PIN1_IDX_MASK, PIO_PULLUP | PIO_DEBOUNCE);
+	pio_configure(PIN2_PIO, PIO_INPUT, PIN2_IDX_MASK, PIO_PULLUP | PIO_DEBOUNCE);
+	pio_configure(PIN3_PIO, PIO_INPUT, PIN3_IDX_MASK, PIO_PULLUP | PIO_DEBOUNCE);
+	pio_configure(PIN4_PIO, PIO_INPUT, PIN4_IDX_MASK, PIO_PULLUP | PIO_DEBOUNCE);
 	
 	// Configura PIO para lidar com o pino do bot�o como entrada
 	// com pull-up
@@ -154,14 +253,44 @@ void io_init(void) {
 	PIO_IT_FALL_EDGE,
 	but_callback);
 	
+	pio_handler_set(PIN2_PIO,
+	PIN2_PIO_ID,
+	PIN2_IDX_MASK,
+	PIO_IT_FALL_EDGE,
+	but_callback);
+	
+	pio_handler_set(PIN3_PIO,
+	PIN3_PIO_ID,
+	PIN3_IDX_MASK,
+	PIO_IT_FALL_EDGE,
+	but_callback);
+	
+	pio_handler_set(PIN4_PIO,
+	PIN4_PIO_ID,
+	PIN4_IDX_MASK,
+	PIO_IT_FALL_EDGE,
+	but_callback);
+	
 	// Ativa interrup��o e limpa primeira IRQ gerada na ativacao
 	pio_enable_interrupt(PIN1_PIO, PIN1_IDX_MASK);
+	pio_enable_interrupt(PIN2_PIO, PIN2_IDX_MASK);
+	pio_enable_interrupt(PIN3_PIO, PIN3_IDX_MASK);
+	pio_enable_interrupt(PIN4_PIO, PIN4_IDX_MASK);
 	pio_get_interrupt_status(PIN1_PIO);
+	pio_get_interrupt_status(PIN2_PIO);
+	pio_get_interrupt_status(PIN3_PIO);
+	pio_get_interrupt_status(PIN4_PIO);
 	
 	// Configura NVIC para receber interrupcoes do PIO do botao
 	// com prioridade 4 (quanto mais pr�ximo de 0 maior)
 	NVIC_EnableIRQ(PIN1_PIO_ID);
+	NVIC_EnableIRQ(PIN2_PIO_ID);
+	NVIC_EnableIRQ(PIN3_PIO_ID);
+	NVIC_EnableIRQ(PIN4_PIO_ID);
 	NVIC_SetPriority(PIN1_PIO_ID, 4); // Prioridade 4
+	NVIC_SetPriority(PIN2_PIO_ID, 4); // Prioridade 4
+	NVIC_SetPriority(PIN3_PIO_ID, 4); // Prioridade 4
+	NVIC_SetPriority(PIN4_PIO_ID, 4); // Prioridade 4
 }
 
 static void configure_console(void) {
@@ -254,9 +383,62 @@ int hc05_init(void) {
 	usart_send_command(USART_COM, buffer_rx, 1000, "AT+PIN0000", 100);
 }
 
+void vTimerCallback(TimerHandle_t xTimer) {
+	/* Selecina canal e inicializa conversão */
+	afec_channel_enable(AFEC_POT, AFEC_POT_CHANNEL);
+	afec_start_software_conversion(AFEC_POT);
+}
+
 /************************************************************************/
 /* TASKS                                                                */
 /************************************************************************/
+static void task_adc(void *pvParameters) {
+
+  // configura ADC e TC para controlar a leitura
+  config_AFEC_pot(AFEC_POT, AFEC_POT_ID, AFEC_POT_CHANNEL, AFEC_pot_callback);
+
+  xTimer = xTimerCreate(/* Just a text name, not used by the RTOS
+                        kernel. */
+                        "Timer",
+                        /* The timer period in ticks, must be
+                        greater than 0. */
+                        100,
+                        /* The timers will auto-reload themselves
+                        when they expire. */
+                        pdTRUE,
+                        /* The ID is used to store a count of the
+                        number of times the timer has expired, which
+                        is initialised to 0. */
+                        (void *)0,
+                        /* Timer callback */
+                        vTimerCallback);
+  xTimerStart(xTimer, 0);
+
+  // variável para recever dados da fila
+  adcData adc;
+
+  while (1) {
+    if (xQueueReceive(xQueueADC, &(adc), 1000)) {
+      printf("ADC: %d \n", adc);
+    } else {
+      printf("Nao chegou um novo dado em 1 segundo");
+    }
+  }
+}
+
+void task_leds(void) {
+	io_init();
+	
+	while(1) {
+		if (but_flag) {
+			pisca_led(5, 100);
+			but_flag = 0;
+		}
+		
+		// dorme por 500 ms
+		vTaskDelay(500 / portTICK_PERIOD_MS);
+	}
+}
 
 void task_bluetooth(void) {
 	printf("Task Bluetooth started \n");
@@ -274,10 +456,26 @@ void task_bluetooth(void) {
 	// Task não deve retornar.
 	while(1) {
 		// atualiza valor do botão
-		if(pio_get(BUT_PIO, PIO_INPUT, BUT_IDX_MASK) == 0) {
+		if(pio_get(PIN1_PIO, PIO_INPUT, PIN1_IDX_MASK) == 0) {
 			button1 = '1';
-		} else {
+		} else if (pio_get(PIN2_PIO, PIO_INPUT, PIN2_IDX_MASK) == 0) {
+			button1 = '2';
+		}
+		else if (pio_get(PIN3_PIO, PIO_INPUT, PIN3_IDX_MASK) == 0) {
+			button1 = '3';
+		}
+		else if (pio_get(PIN4_PIO, PIO_INPUT, PIN4_IDX_MASK) == 0) {
+			button1 = '4';
+		}
+		else {
 			button1 = '0';
+		}
+		
+		char volume;
+		if (xQueueReceive(xQueueVolume, &(volume), 1000)) {
+			button1 = volume;
+		} else {
+			printf("Nao chegou um novo dado em 1 segundo");
 		}
 
 		// envia status botão
@@ -291,11 +489,6 @@ void task_bluetooth(void) {
 			vTaskDelay(10 / portTICK_PERIOD_MS);
 		}
 		usart_write(USART_COM, eof);
-		
-		if(but_flag){
-			pisca_led(20, 100);
-			but_flag = 0;
-		}
 
 		// dorme por 500 ms
 		vTaskDelay(500 / portTICK_PERIOD_MS);
@@ -314,9 +507,16 @@ int main(void) {
 	io_init();
 
 	configure_console();
+	xQueueADC = xQueueCreate(100, sizeof(adcData));
+	if (xQueueADC == NULL)
+		printf("falha em criar a queue xQueueADC \n");
+	xQueueVolume = xQueueCreate(32, sizeof(char));
+	if (xQueueVolume == NULL)
+		printf("falha em criar a queue xQueueVolume \n");
 
 	/* Create task to make led blink */
 	xTaskCreate(task_bluetooth, "BLT", TASK_BLUETOOTH_STACK_SIZE, NULL,	TASK_BLUETOOTH_STACK_PRIORITY, NULL);
+	xTaskCreate(task_leds, "BLT", TASK_LED_STACK_SIZE, NULL,	TASK_LED_STACK_PRIORITY, NULL);
 
 	/* Start the scheduler. */
 	vTaskStartScheduler();
