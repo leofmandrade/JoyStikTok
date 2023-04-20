@@ -77,6 +77,8 @@ TimerHandle_t xTimer;
 #define TASK_BLUETOOTH_STACK_PRIORITY        (tskIDLE_PRIORITY)
 #define TASK_LED_STACK_SIZE            (4096/sizeof(portSTACK_TYPE))
 #define TASK_LED_STACK_PRIORITY        (tskIDLE_PRIORITY)
+#define TASK_ADC_STACK_SIZE (1024 * 10 / sizeof(portSTACK_TYPE))
+#define TASK_ADC_STACK_PRIORITY (tskIDLE_PRIORITY)
 
 QueueHandle_t xQueueVolume;
 QueueHandle_t xQueueADC;
@@ -171,9 +173,8 @@ static void AFEC_pot_callback(void) {
   adcData adc;
   adc.value = afec_channel_get_value(AFEC_POT, AFEC_POT_CHANNEL);
   int valor = adc.value*65/4096;
-  char caracter = valor + '0';
   BaseType_t xHigherPriorityTaskWoken = pdTRUE;
-  xQueueSendFromISR(xQueueVolume, (void *)&caracter, xHigherPriorityTaskWoken);
+  xQueueSendFromISR(xQueueVolume, &valor, xHigherPriorityTaskWoken);
 }
 
 /************************************************************************/
@@ -397,32 +398,16 @@ static void task_adc(void *pvParameters) {
   // configura ADC e TC para controlar a leitura
   config_AFEC_pot(AFEC_POT, AFEC_POT_ID, AFEC_POT_CHANNEL, AFEC_pot_callback);
 
-  xTimer = xTimerCreate(/* Just a text name, not used by the RTOS
-                        kernel. */
-                        "Timer",
-                        /* The timer period in ticks, must be
-                        greater than 0. */
-                        100,
-                        /* The timers will auto-reload themselves
-                        when they expire. */
-                        pdTRUE,
-                        /* The ID is used to store a count of the
-                        number of times the timer has expired, which
-                        is initialised to 0. */
-                        (void *)0,
-                        /* Timer callback */
-                        vTimerCallback);
-  xTimerStart(xTimer, 0);
-
-  // variável para recever dados da fila
-  adcData adc;
-
-  while (1) {
-    if (xQueueReceive(xQueueADC, &(adc), 1000)) {
-      printf("ADC: %d \n", adc);
-    } else {
-      printf("Nao chegou um novo dado em 1 segundo");
-    }
+  int x = 0;
+  afec_disable_interrupt(AFEC_POT,AFEC_INTERRUPT_EOC_5);
+  for (;;)  {
+	  if (x >=40){
+		  afec_channel_enable(AFEC_POT, AFEC_POT_CHANNEL);
+		  afec_start_software_conversion(AFEC_POT);
+		  x = 0;
+	  }
+	  x++;
+	  vTaskDelay(50);
   }
 }
 
@@ -451,37 +436,41 @@ void task_bluetooth(void) {
 	io_init();
 
 	char button1 = '0';
+	int volumeNovo = 0;
 	char eof = 'X';
+	int pio = 0;
 
 	// Task não deve retornar.
 	while(1) {
 		// atualiza valor do botão
 		if(pio_get(PIN1_PIO, PIO_INPUT, PIN1_IDX_MASK) == 0) {
+			pio = 1;
 			button1 = '1';
 		} else if (pio_get(PIN2_PIO, PIO_INPUT, PIN2_IDX_MASK) == 0) {
+			pio = 1;
 			button1 = '2';
 		}
 		else if (pio_get(PIN3_PIO, PIO_INPUT, PIN3_IDX_MASK) == 0) {
+			pio = 1;
 			button1 = '3';
 		}
 		else if (pio_get(PIN4_PIO, PIO_INPUT, PIN4_IDX_MASK) == 0) {
+			pio = 1;
 			button1 = '4';
 		}
-		else {
-			button1 = '0';
-		}
-		
-		char volume;
-		if (xQueueReceive(xQueueVolume, &(volume), 1000)) {
-			button1 = volume;
-		} else {
-			printf("Nao chegou um novo dado em 1 segundo");
-		}
+		// else {
+		// 	int valor;
+		// 	if (xQueueReceive(xQueueVolume, &valor, 1000)) {
+		// 		volumeNovo = valor;
+		// 	}
+		// }
 
 		// envia status botão
 		while(!usart_is_tx_ready(USART_COM)) {
 			vTaskDelay(10 / portTICK_PERIOD_MS);
 		}
+
+		printf("%c \n", button1);
 		usart_write(USART_COM, button1);
 		
 		// envia fim de pacote
@@ -489,7 +478,27 @@ void task_bluetooth(void) {
 			vTaskDelay(10 / portTICK_PERIOD_MS);
 		}
 		usart_write(USART_COM, eof);
-
+		
+		// if (pio == 1) {
+		// 	printf("%c \n", button1);
+		// 	usart_write(USART_COM, button1);
+			
+		// 	// envia fim de pacote
+		// 	while(!usart_is_tx_ready(USART_COM)) {
+		// 		vTaskDelay(10 / portTICK_PERIOD_MS);
+		// 	}
+		// 	usart_write(USART_COM, eof);
+		// 	pio = 0;
+		// }
+		// else {
+		// 	usart_write(USART_COM, volumeNovo);
+			
+		// 	// envia fim de pacote
+		// 	while(!usart_is_tx_ready(USART_COM)) {
+		// 		vTaskDelay(10 / portTICK_PERIOD_MS);
+		// 	}
+		// 	usart_write(USART_COM, eof);
+		// }
 		// dorme por 500 ms
 		vTaskDelay(500 / portTICK_PERIOD_MS);
 	}
@@ -510,13 +519,17 @@ int main(void) {
 	xQueueADC = xQueueCreate(100, sizeof(adcData));
 	if (xQueueADC == NULL)
 		printf("falha em criar a queue xQueueADC \n");
-	xQueueVolume = xQueueCreate(32, sizeof(char));
+	xQueueVolume = xQueueCreate(32, sizeof(int));
 	if (xQueueVolume == NULL)
 		printf("falha em criar a queue xQueueVolume \n");
 
 	/* Create task to make led blink */
 	xTaskCreate(task_bluetooth, "BLT", TASK_BLUETOOTH_STACK_SIZE, NULL,	TASK_BLUETOOTH_STACK_PRIORITY, NULL);
 	xTaskCreate(task_leds, "BLT", TASK_LED_STACK_SIZE, NULL,	TASK_LED_STACK_PRIORITY, NULL);
+	 if (xTaskCreate(task_adc, "ADC", TASK_ADC_STACK_SIZE, NULL,
+	 TASK_ADC_STACK_PRIORITY, NULL) != pdPASS) {
+		 printf("Failed to create test ADC task\r\n");
+	 }
 
 	/* Start the scheduler. */
 	vTaskStartScheduler();
