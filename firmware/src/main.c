@@ -168,13 +168,16 @@ extern void vApplicationMallocFailedHook(void) {
 /************************************************************************/
 /* handlers / callbacks                                                 */
 /************************************************************************/
-
+int valorAntigo = 0;
 static void AFEC_pot_callback(void) {
   adcData adc;
   adc.value = afec_channel_get_value(AFEC_POT, AFEC_POT_CHANNEL);
-  int valor = adc.value*65/4096;
+  char valor = adc.value*65/4096;
   BaseType_t xHigherPriorityTaskWoken = pdTRUE;
-  xQueueSendFromISR(xQueueVolume, &valor, xHigherPriorityTaskWoken);
+  if (valor != valorAntigo){
+	valorAntigo = valor;
+	xQueueSendFromISR(xQueueVolume, &valor, xHigherPriorityTaskWoken);
+  }
 }
 
 /************************************************************************/
@@ -436,71 +439,52 @@ void task_bluetooth(void) {
 	io_init();
 
 	char button1 = '0';
-	int volumeNovo = 0;
 	char eof = 'X';
 	int pio = 0;
+	char buttonAntigo = '0';
 
 	// Task não deve retornar.
 	while(1) {
 		// atualiza valor do botão
 		if(pio_get(PIN1_PIO, PIO_INPUT, PIN1_IDX_MASK) == 0) {
-			pio = 1;
 			button1 = '1';
 		} else if (pio_get(PIN2_PIO, PIO_INPUT, PIN2_IDX_MASK) == 0) {
-			pio = 1;
 			button1 = '2';
 		}
 		else if (pio_get(PIN3_PIO, PIO_INPUT, PIN3_IDX_MASK) == 0) {
-			pio = 1;
 			button1 = '3';
 		}
 		else if (pio_get(PIN4_PIO, PIO_INPUT, PIN4_IDX_MASK) == 0) {
-			pio = 1;
 			button1 = '4';
+		} else {
+			button1 = 'c';
 		}
-		// else {
-		// 	int valor;
-		// 	if (xQueueReceive(xQueueVolume, &valor, 1000)) {
-		// 		volumeNovo = valor;
-		// 	}
-		// }
+
+		char valor;
+		if (xQueueReceive(xQueueVolume, &valor, 0)) {
+			button1 = valor;
+		}
 
 		// envia status botão
 		while(!usart_is_tx_ready(USART_COM)) {
 			vTaskDelay(10 / portTICK_PERIOD_MS);
 		}
-
-		printf("%c \n", button1);
-		usart_write(USART_COM, button1);
 		
-		// envia fim de pacote
-		while(!usart_is_tx_ready(USART_COM)) {
-			vTaskDelay(10 / portTICK_PERIOD_MS);
+		
+		if (buttonAntigo != button1) {
+			buttonAntigo = button1;
+			
+			printf("%c \n", button1);
+			usart_write(USART_COM, button1);
+			
+			// envia fim de pacote
+			while(!usart_is_tx_ready(USART_COM)) {
+				vTaskDelay(10 / portTICK_PERIOD_MS);
+			}
+			usart_write(USART_COM, eof);
 		}
-		usart_write(USART_COM, eof);
-		
-		// if (pio == 1) {
-		// 	printf("%c \n", button1);
-		// 	usart_write(USART_COM, button1);
-			
-		// 	// envia fim de pacote
-		// 	while(!usart_is_tx_ready(USART_COM)) {
-		// 		vTaskDelay(10 / portTICK_PERIOD_MS);
-		// 	}
-		// 	usart_write(USART_COM, eof);
-		// 	pio = 0;
-		// }
-		// else {
-		// 	usart_write(USART_COM, volumeNovo);
-			
-		// 	// envia fim de pacote
-		// 	while(!usart_is_tx_ready(USART_COM)) {
-		// 		vTaskDelay(10 / portTICK_PERIOD_MS);
-		// 	}
-		// 	usart_write(USART_COM, eof);
-		// }
 		// dorme por 500 ms
-		vTaskDelay(500 / portTICK_PERIOD_MS);
+		vTaskDelay(100 / portTICK_PERIOD_MS);
 	}
 }
 
@@ -519,7 +503,7 @@ int main(void) {
 	xQueueADC = xQueueCreate(100, sizeof(adcData));
 	if (xQueueADC == NULL)
 		printf("falha em criar a queue xQueueADC \n");
-	xQueueVolume = xQueueCreate(32, sizeof(int));
+	xQueueVolume = xQueueCreate(32, sizeof(char));
 	if (xQueueVolume == NULL)
 		printf("falha em criar a queue xQueueVolume \n");
 

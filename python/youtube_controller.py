@@ -41,18 +41,14 @@ class SerialControllerInterface:
         data = self.ser.read()
         logging.debug("Received DATA: {}".format(data))
 
-        A = False
-        B = False
-        
+        print(data)
         if data == b'1':
             print("datab1")
-            A = True
             logging.info("KEYDOWN A")
             pyautogui.keyDown(self.mapping.button['A'])
             pyautogui.keyUp(self.mapping.button['A'])
         elif data == b'2':
             print("datab2")
-            B = True
             logging.info("KEYDOWN B")
             pyautogui.keyDown(self.mapping.button2['B'])
             pyautogui.keyUp(self.mapping.button2['B'])
@@ -62,9 +58,11 @@ class SerialControllerInterface:
         elif data == b'4':
             print("datab4")
             desktop.press_keys("down")
-        # else:
-        #     volume_novo = int.from_bytes(data , "big")*-1
-        #     volume.SetMasterVolumeLevel(volume_novo, None)
+        elif data == b'c':
+            print()
+        else:
+            volume_novo = int.from_bytes(data , "big")*-1
+            volume.SetMasterVolumeLevel(volume_novo, None)
 
         self.incoming = self.ser.read()
 
