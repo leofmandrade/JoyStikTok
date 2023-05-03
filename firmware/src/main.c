@@ -19,6 +19,12 @@
 #define LED_IDX      8
 #define LED_IDX_MASK (1 << LED_IDX)
 
+#define LED1_PIO      PIOA
+#define LED1_PIO_ID   ID_PIOA
+#define LED1_IDX      4
+#define LED1_IDX_MASK (1 << LED1_IDX)
+
+
 // Botão
 #define BUT_PIO      PIOA
 #define BUT_PIO_ID   ID_PIOA
@@ -57,7 +63,7 @@
 // Descomente para enviar dados
 // pela serial debug
 
-#define DEBUG_SERIAL
+// #define DEBUG_SERIAL
 
 #ifdef DEBUG_SERIAL
 #define USART_COM USART1
@@ -118,6 +124,8 @@ volatile char but4_flag = 0;
 /************************************************************************/
 void pisca_led(int n, int t);
 void io_init(void);
+void pin_toggle(Pio *pio, uint32_t mask);
+
 
 void but_callback(void)
 {
@@ -133,6 +141,13 @@ void pisca_led(int n, int t){
 		pio_set(LED_PIO, LED_IDX_MASK);
 		delay_ms(t);
 	}
+}
+
+void pin_toggle(Pio *pio, uint32_t mask) {
+	if(pio_get_output_data_status(pio, mask))
+		pio_clear(pio, mask);
+	else
+		pio_set(pio,mask);
 }
 
 /* Called if stack overflow during execution */
@@ -233,6 +248,7 @@ void io_init(void) {
 
 	// Ativa PIOs
 	pmc_enable_periph_clk(LED_PIO_ID);
+	pmc_enable_periph_clk(LED1_PIO_ID);
 	pmc_enable_periph_clk(BUT_PIO_ID);
 	pmc_enable_periph_clk(PIN1_PIO_ID);
 	pmc_enable_periph_clk(PIN2_PIO_ID);
@@ -241,6 +257,7 @@ void io_init(void) {
 
 	// Configura Pinos
 	pio_configure(LED_PIO, PIO_OUTPUT_1, LED_IDX_MASK, PIO_DEFAULT | PIO_DEBOUNCE);
+	pio_configure(LED1_PIO, PIO_OUTPUT_1, LED1_IDX_MASK, PIO_DEFAULT | PIO_DEBOUNCE);
 	pio_configure(BUT_PIO, PIO_INPUT, BUT_IDX_MASK, PIO_PULLUP);
 	pio_configure(PIN1_PIO, PIO_INPUT, PIN1_IDX_MASK, PIO_PULLUP | PIO_DEBOUNCE);
 	pio_configure(PIN2_PIO, PIO_INPUT, PIN2_IDX_MASK, PIO_PULLUP | PIO_DEBOUNCE);
@@ -380,7 +397,7 @@ int hc05_init(void) {
 	vTaskDelay( 500 / portTICK_PERIOD_MS);
 	usart_send_command(USART_COM, buffer_rx, 1000, "AT", 100);
 	vTaskDelay( 500 / portTICK_PERIOD_MS);
-	usart_send_command(USART_COM, buffer_rx, 1000, "AT+NAMEagoravai", 100);
+	usart_send_command(USART_COM, buffer_rx, 1000, "AT+NAMEmengo", 100);
 	vTaskDelay( 500 / portTICK_PERIOD_MS);
 	usart_send_command(USART_COM, buffer_rx, 1000, "AT", 100);
 	vTaskDelay( 500 / portTICK_PERIOD_MS);
@@ -450,6 +467,7 @@ void task_bluetooth(void) {
 			button1 = '1';
 		} else if (pio_get(PIN2_PIO, PIO_INPUT, PIN2_IDX_MASK) == 0) {
 			button1 = '2';
+			pin_toggle(LED1_PIO, LED1_IDX_MASK);
 		}
 		else if (pio_get(PIN3_PIO, PIO_INPUT, PIN3_IDX_MASK) == 0) {
 			button1 = '3';
