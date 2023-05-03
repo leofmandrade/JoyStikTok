@@ -62,9 +62,9 @@ Já para o potenciômetro, um feedback tátil pode ser a resistência que o usu�
 
 ## In/OUT (3 pts)
 
-Para cada vez que o joystick mutar algum vídeo (movimento para a esquerda) e ele ficar sem som, um LED vermelho ficará acesso até que o som volte.
+Para cada vez que o joystick mutar algum vídeo (movimento para a esquerda) e ele ficar sem som, o LED verde irá apagar. Quando voltar o som, o LED verde irá acender de novo.
 
-Para um movimento para a direita de curtir o vídeo, um LED verde irá piscar por alguns segundos. Assim, indicando que o usuário deu like no vídeo em que ele está.
+Para qualquer movimento do joystick, o LED da placa irá piscar por alguns segundos. Assim, indicando que recebeu algum comando do usuário.
 
 ### Design (2 pts)
 
